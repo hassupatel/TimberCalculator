@@ -1,0 +1,6 @@
+{
+  "name": "Timber CFT Calculator",
+  "description": "Fast cubic feet (CFT) calculator for rectangular and round log timber with fractional measurements and tally sheet.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
