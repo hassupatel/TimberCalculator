@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
@@ -71,6 +72,11 @@ fun TimberCalculatorApp(
 ) {
     val context = LocalContext.current
     val tallyList by viewModel.tallyItems.collectAsState()
+
+    // Intercept back button to collapse the custom keypad if expanded
+    BackHandler(enabled = !viewModel.isKeyboardCollapsed) {
+        viewModel.isKeyboardCollapsed = true
+    }
 
     // State to toggle between calculator tab and customer bills tab
     var activeTab by remember { mutableStateOf("calculator") }
