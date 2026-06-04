@@ -131,6 +131,7 @@ fun TimberCalculatorApp(
                 RecentMeasurementsCard(
                     tallyList = tallyList,
                     onDeleteClick = { viewModel.deleteTallyItem(it) },
+                    onRerunClick = { viewModel.rerunCalculation(it) },
                     onClearAll = { viewModel.clearTally() }
                 )
             }
@@ -317,13 +318,29 @@ fun InputFormCard(
                     )
                 }
             }
-            DimensionInputElement(
-                label = "Length (ft)",
-                value = viewModel.rectLength,
-                isActive = viewModel.activeField == ActiveField.RECT_LENGTH,
-                onFocus = { viewModel.activeField = ActiveField.RECT_LENGTH },
-                placeholder = "Length"
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    DimensionInputElement(
+                        label = "Length (ft)",
+                        value = viewModel.rectLength,
+                        isActive = viewModel.activeField == ActiveField.RECT_LENGTH,
+                        onFocus = { viewModel.activeField = ActiveField.RECT_LENGTH },
+                        placeholder = "Length"
+                    )
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    DimensionInputElement(
+                        label = "Units / Pieces",
+                        value = viewModel.rectUnits,
+                        isActive = viewModel.activeField == ActiveField.RECT_UNITS,
+                        onFocus = { viewModel.activeField = ActiveField.RECT_UNITS },
+                        placeholder = "1"
+                    )
+                }
+            }
         } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -579,8 +596,10 @@ fun ActiveVolumeDisplay(
 fun RecentMeasurementsCard(
     tallyList: List<TallyItem>,
     onDeleteClick: (Int) -> Unit,
+    onRerunClick: (TallyItem) -> Unit,
     onClearAll: () -> Unit
 ) {
+    val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -597,7 +616,7 @@ fun RecentMeasurementsCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "RECENT MEASUREMENTS",
+                    text = "RECENT MEASUREMENTS & HISTORY",
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF49454F),
@@ -634,13 +653,19 @@ fun RecentMeasurementsCard(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp),
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                onRerunClick(item)
+                                Toast.makeText(context, "Loaded calculation into fields!", Toast.LENGTH_SHORT).show()
+                            }
+                            .padding(vertical = 4.dp, horizontal = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             val dimString = if (item.type == "RECTANGULAR") {
-                                "${item.width}\" w × ${item.thickness}\" t × ${item.length}′ l (Sawn)"
+                                val pcsString = if (item.units > 1) " × ${item.units} pcs" else ""
+                                "${item.width}\" w × ${item.thickness}\" t × ${item.length}′ l$pcsString (Sawn)"
                             } else {
                                 "${item.girth}\" circ × ${item.length}′ (${if (item.useHoppusRule) "Hoppus" else "Cylinder"})"
                             }
@@ -653,7 +678,7 @@ fun RecentMeasurementsCard(
                         }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
                                 text = String.format(java.util.Locale.US, "%.3f CFT", item.calculatedCft),
@@ -661,6 +686,20 @@ fun RecentMeasurementsCard(
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color(0xFF1D1B20)
                             )
+                            IconButton(
+                                onClick = {
+                                    onRerunClick(item)
+                                    Toast.makeText(context, "Loaded calculation into fields!", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Re-run calculation",
+                                    tint = Color(0xFF6750A4),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                             IconButton(
                                 onClick = { onDeleteClick(item.id) },
                                 modifier = Modifier.size(24.dp)
@@ -1037,7 +1076,8 @@ private fun shareTallyReceipt(
         items.forEachIndexed { idx, item ->
             val num = idx + 1
             if (item.type == "RECTANGULAR") {
-                append("$num. Sawn: ${item.width}\" W × ${item.thickness}\" T × ${item.length}′ L = ")
+                val pcsString = if (item.units > 1) " × ${item.units} pcs" else ""
+                append("$num. Sawn: ${item.width}\" W × ${item.thickness}\" T × ${item.length}′ L$pcsString = ")
                 append(String.format(java.util.Locale.US, "%.3f CFT\n", item.calculatedCft))
             } else {
                 val rule = if (item.useHoppusRule) "Hoppus" else "Cylinder"

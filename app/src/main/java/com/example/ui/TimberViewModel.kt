@@ -21,7 +21,7 @@ enum class TimberMode {
 }
 
 enum class ActiveField {
-    RECT_WIDTH, RECT_THICKNESS, RECT_LENGTH,
+    RECT_WIDTH, RECT_THICKNESS, RECT_LENGTH, RECT_UNITS,
     ROUND_GIRTH, ROUND_LENGTH,
     RATE
 }
@@ -46,10 +46,11 @@ class TimberViewModel(application: Application) : AndroidViewModel(application) 
     var useHoppusRule by mutableStateOf(true) // true = Hoppus (2304), false = Cylinder (1810)
     var activeField by mutableStateOf(ActiveField.RECT_WIDTH)
 
-    // Rectangular Inputs (Width in inches, Thickness in inches, Length in feet)
+    // Rectangular Inputs (Width in inches, Thickness in inches, Length in feet, Units/Pieces)
     var rectWidth by mutableStateOf("")
     var rectThickness by mutableStateOf("")
     var rectLength by mutableStateOf("")
+    var rectUnits by mutableStateOf("1")
 
     // Round Log Inputs (Girth in inches, Length in feet)
     var roundGirth by mutableStateOf("")
@@ -67,8 +68,10 @@ class TimberViewModel(application: Application) : AndroidViewModel(application) 
                     val w = rectWidth.toDoubleOrNull() ?: 0.0
                     val t = rectThickness.toDoubleOrNull() ?: 0.0
                     val l = rectLength.toDoubleOrNull() ?: 0.0
+                    val u = rectUnits.toIntOrNull() ?: 1
+                    val finalUnits = if (u <= 0) 1 else u
                     if (w <= 0.0 || t <= 0.0 || l <= 0.0) 0.0
-                    else (w * t * l) / 144.0
+                    else (w * t * l) / 144.0 * finalUnits
                 }
                 TimberMode.ROUND -> {
                     val g = roundGirth.toDoubleOrNull() ?: 0.0
@@ -84,6 +87,7 @@ class TimberViewModel(application: Application) : AndroidViewModel(application) 
 
     // Append standard fractions (0.25, 0.50, 0.75) to the active text field
     fun appendFraction(fraction: Double) {
+        if (activeField == ActiveField.RECT_UNITS) return
         val currentText = getActiveText()
         val num = currentText.toDoubleOrNull() ?: 0.0
         val whole = floor(num)
@@ -105,6 +109,7 @@ class TimberViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun appendChar(char: String) {
+        if (activeField == ActiveField.RECT_UNITS && char == ".") return
         val currentText = getActiveText()
         if (char == ".") {
             if (currentText.contains(".")) return
@@ -128,6 +133,7 @@ class TimberViewModel(application: Application) : AndroidViewModel(application) 
             ActiveField.RECT_WIDTH -> rectWidth
             ActiveField.RECT_THICKNESS -> rectThickness
             ActiveField.RECT_LENGTH -> rectLength
+            ActiveField.RECT_UNITS -> rectUnits
             ActiveField.ROUND_GIRTH -> roundGirth
             ActiveField.ROUND_LENGTH -> roundLength
             ActiveField.RATE -> ratePerCft
@@ -139,6 +145,10 @@ class TimberViewModel(application: Application) : AndroidViewModel(application) 
             ActiveField.RECT_WIDTH -> rectWidth = text
             ActiveField.RECT_THICKNESS -> rectThickness = text
             ActiveField.RECT_LENGTH -> rectLength = text
+            ActiveField.RECT_UNITS -> {
+                val filtered = text.filter { it.isDigit() }
+                rectUnits = filtered
+            }
             ActiveField.ROUND_GIRTH -> roundGirth = text
             ActiveField.ROUND_LENGTH -> roundLength = text
             ActiveField.RATE -> ratePerCft = text
@@ -163,6 +173,7 @@ class TimberViewModel(application: Application) : AndroidViewModel(application) 
         rectWidth = ""
         rectThickness = ""
         rectLength = ""
+        rectUnits = "1"
         roundGirth = ""
         roundLength = ""
     }
@@ -173,11 +184,14 @@ class TimberViewModel(application: Application) : AndroidViewModel(application) 
 
         val item = when (currentMode) {
             TimberMode.RECTANGULAR -> {
+                val u = rectUnits.toIntOrNull() ?: 1
+                val finalUnits = if (u <= 0) 1 else u
                 TallyItem(
                     type = "RECTANGULAR",
                     length = rectLength.toDoubleOrNull() ?: 0.0,
                     width = rectWidth.toDoubleOrNull() ?: 0.0,
                     thickness = rectThickness.toDoubleOrNull() ?: 0.0,
+                    units = finalUnits,
                     calculatedCft = cft
                 )
             }
@@ -208,6 +222,31 @@ class TimberViewModel(application: Application) : AndroidViewModel(application) 
     fun clearTally() {
         viewModelScope.launch {
             repository.clearAll()
+        }
+    }
+
+    private fun formatValueForInput(value: Double): String {
+        return if (value % 1.0 == 0.0) {
+            value.toInt().toString()
+        } else {
+            value.toString()
+        }
+    }
+
+    fun rerunCalculation(item: TallyItem) {
+        if (item.type == "RECTANGULAR") {
+            currentMode = TimberMode.RECTANGULAR
+            rectWidth = item.width?.let { formatValueForInput(it) } ?: ""
+            rectThickness = item.thickness?.let { formatValueForInput(it) } ?: ""
+            rectLength = item.length.let { formatValueForInput(it) }
+            rectUnits = item.units.toString()
+            activeField = ActiveField.RECT_WIDTH
+        } else {
+            currentMode = TimberMode.ROUND
+            roundGirth = item.girth?.let { formatValueForInput(it) } ?: ""
+            roundLength = item.length.let { formatValueForInput(it) }
+            useHoppusRule = item.useHoppusRule
+            activeField = ActiveField.ROUND_LENGTH
         }
     }
 }

@@ -17,6 +17,7 @@ data class TallyItem(
     
     // Formula options
     val useHoppusRule: Boolean = true, // true for Hoppus, false for Actual volume (Cylinder)
+    val units: Int = 1, // Number of identical pieces (for rectangular mode)
     
     // Calculated Result
     val calculatedCft: Double
