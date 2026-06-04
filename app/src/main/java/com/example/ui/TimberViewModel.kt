@@ -52,7 +52,14 @@ class TimberViewModel(application: Application) : AndroidViewModel(application) 
     // UI Configuration & Inputs
     var currentMode by mutableStateOf(TimberMode.RECTANGULAR)
     var useHoppusRule by mutableStateOf(true) // true = Hoppus (2304), false = Cylinder (1810)
-    var activeField by mutableStateOf(ActiveField.RECT_WIDTH)
+    var isKeyboardCollapsed by mutableStateOf(false)
+    private var _activeField by mutableStateOf(ActiveField.RECT_WIDTH)
+    var activeField: ActiveField
+        get() = _activeField
+        set(value) {
+            _activeField = value
+            isKeyboardCollapsed = false
+        }
 
     // Rectangular Inputs (Width in inches, Thickness in inches, Length in feet, Units/Pieces)
     var rectWidth by mutableStateOf("")
@@ -309,5 +316,30 @@ class TimberViewModel(application: Application) : AndroidViewModel(application) 
                 ActiveField.ROUND_LENGTH
             }
         }
+    }
+
+    fun moveToNextField() {
+        activeField = when (currentMode) {
+            TimberMode.RECTANGULAR -> {
+                when (activeField) {
+                    ActiveField.RECT_WIDTH -> ActiveField.RECT_THICKNESS
+                    ActiveField.RECT_THICKNESS -> ActiveField.RECT_LENGTH
+                    ActiveField.RECT_LENGTH -> ActiveField.RECT_UNITS
+                    ActiveField.RECT_UNITS -> ActiveField.RATE
+                    ActiveField.RATE -> ActiveField.RECT_WIDTH
+                    else -> ActiveField.RECT_WIDTH
+                }
+            }
+            TimberMode.ROUND -> {
+                when (activeField) {
+                    ActiveField.ROUND_LENGTH -> ActiveField.ROUND_GIRTH
+                    ActiveField.ROUND_GIRTH -> ActiveField.RATE
+                    ActiveField.RATE -> ActiveField.ROUND_LENGTH
+                    else -> ActiveField.ROUND_LENGTH
+                }
+            }
+        }
+        // Automatically make sure the keyboard is showing on moving next
+        isKeyboardCollapsed = false
     }
 }

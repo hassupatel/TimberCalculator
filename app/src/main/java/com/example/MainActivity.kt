@@ -1140,90 +1140,142 @@ fun InvoiceSummaryCard(
 fun KeypadFooter(
     viewModel: TimberViewModel
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFFE7E0EC))
-            .navigationBarsPadding()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        val keysList = listOf(
-            listOf("7", "8", "9", "CLR"),
-            listOf("4", "5", "6", "¼"),
-            listOf("1", "2", "3", "½"),
-            listOf("0", ".", "BACK", "¾")
-        )
-
-        keysList.forEach { row ->
+    if (viewModel.isKeyboardCollapsed) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFE7E0EC))
+                .clickable { viewModel.isKeyboardCollapsed = false }
+                .padding(vertical = 12.dp)
+                .navigationBarsPadding()
+                .testTag("expand_keypad_bar"),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowUp,
+                contentDescription = "Expand Keypad",
+                tint = Color(0xFF6750A4),
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "EXPAND KEYPAD",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF6750A4)
+            )
+        }
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFE7E0EC))
+                .navigationBarsPadding()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Collapsible header handle
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { viewModel.isKeyboardCollapsed = true }
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                row.forEach { key ->
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                when (key) {
-                                    "CLR" -> Color(0xFFFFDADA)
-                                    "¼", "½", "¾" -> Color(0xFFD0BCFF)
-                                    else -> Color.White
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Collapse Keypad",
+                    tint = Color(0xFF49454F).copy(alpha = 0.6f),
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "COLLAPSE KEYPAD",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF49454F).copy(alpha = 0.6f),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            val keysList = listOf(
+                listOf("7", "8", "9", "¼"),
+                listOf("4", "5", "6", "½"),
+                listOf("1", "2", "3", "¾"),
+                listOf("0", ".", "BACK", "NEXT")
+            )
+
+            keysList.forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    row.forEach { key ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    when (key) {
+                                        "¼", "½", "¾" -> Color(0xFFD0BCFF)
+                                        "NEXT" -> Color(0xFF6750A4)
+                                        else -> Color.White
+                                    }
+                                )
+                                .clickable {
+                                    when (key) {
+                                        "¼" -> viewModel.appendFraction(0.25)
+                                        "½" -> viewModel.appendFraction(0.50)
+                                        "¾" -> viewModel.appendFraction(0.75)
+                                        "NEXT" -> viewModel.moveToNextField()
+                                        "BACK" -> viewModel.backspaceActiveField()
+                                        else -> viewModel.appendChar(key)
+                                    }
                                 }
-                            )
-                            .clickable {
-                                when (key) {
-                                    "CLR" -> viewModel.clearActiveField()
-                                    "¼" -> viewModel.appendFraction(0.25)
-                                    "½" -> viewModel.appendFraction(0.50)
-                                    "¾" -> viewModel.appendFraction(0.75)
-                                    "BACK" -> viewModel.backspaceActiveField()
-                                    else -> viewModel.appendChar(key)
-                                }
+                                .testTag("keypad_btn_$key"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (key == "BACK") {
+                                Text(
+                                    text = "⌫",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    ),
+                                    color = Color(0xFF21005D)
+                                )
+                            } else {
+                                Text(
+                                    text = key,
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontSize = if (key.length > 2) 14.sp else 18.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    ),
+                                    color = when (key) {
+                                        "¼", "½", "¾" -> Color(0xFF21005D)
+                                        "NEXT" -> Color.White
+                                        else -> Color(0xFF1D1B20)
+                                    }
+                                )
                             }
-                            .testTag("keypad_btn_$key"),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (key == "BACK") {
-                            Text(
-                                text = "⌫",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontSize = 20.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                ),
-                                color = Color(0xFF21005D)
-                            )
-                        } else {
-                            Text(
-                                text = key,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontSize = if (key.length > 2) 14.sp else 18.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                ),
-                                color = when (key) {
-                                    "CLR" -> Color(0xFF410002)
-                                    "¼", "½", "¾" -> Color(0xFF21005D)
-                                    else -> Color(0xFF1D1B20)
-                                }
-                            )
                         }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(2.dp))
+            // High density visual slide anchor bar decoration
+            Box(
+                modifier = Modifier
+                    .width(100.dp)
+                    .height(5.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(Color(0xFF49454F).copy(alpha = 0.2f))
+            )
         }
-        
-        Spacer(modifier = Modifier.height(2.dp))
-        // High density visual slide anchor bar decoration
-        Box(
-            modifier = Modifier
-                .width(100.dp)
-                .height(5.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(Color(0xFF49454F).copy(alpha = 0.2f))
-        )
     }
 }
 
@@ -1320,6 +1372,10 @@ fun CustomerBillsScreen(
     var expandedCustomer by remember { mutableStateOf<String?>(null) }
     // Inside each customer, we can click to expand particular bills details
     var expandedBillId by remember { mutableStateOf<Int?>(null) }
+
+    // Dialog confirmation states
+    var showDeleteConfirmationDialog by remember { mutableStateOf(false) }
+    var billToDelete by remember { mutableStateOf<com.example.data.CustomerBill?>(null) }
 
     Column(
         modifier = modifier
@@ -1454,45 +1510,73 @@ fun CustomerBillsScreen(
                                                 border = BorderStroke(0.5.dp, Color(0xFFCAC4D0))
                                             ) {
                                                 Column(modifier = Modifier.padding(10.dp)) {
-                                                    // Top Row click to expand items list
+                                                    // Top Row click to expand items list, now with a separate direct Delete action button
                                                     Row(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .clickable {
-                                                                expandedBillId = if (isBillDetailed) null else bill.id
-                                                            },
-                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        modifier = Modifier.fillMaxWidth(),
                                                         verticalAlignment = Alignment.CenterVertically
                                                     ) {
-                                                        Column(modifier = Modifier.weight(1.0f)) {
-                                                            Text(
-                                                                text = "Invoice on $billDate",
-                                                                style = MaterialTheme.typography.bodyMedium,
-                                                                fontWeight = FontWeight.Bold,
-                                                                color = Color(0xFF1D1B20)
-                                                            )
-                                                            val decodedCount = com.example.data.CustomerBill.deserializeItems(bill.itemsJson).size
-                                                            Text(
-                                                                text = "$decodedCount Timber Wood Item" + if (decodedCount != 1) "s" else "",
-                                                                style = MaterialTheme.typography.bodySmall,
-                                                                color = Color(0xFF49454F)
-                                                            )
-                                                        }
-                                                        Column(horizontalAlignment = Alignment.End) {
-                                                            Text(
-                                                                text = String.format(Locale.US, "%.3f CFT", bill.totalCft),
-                                                                style = MaterialTheme.typography.bodyMedium,
-                                                                fontWeight = FontWeight.ExtraBold,
-                                                                color = Color(0xFF6750A4)
-                                                            )
-                                                            if (bill.totalPrice > 0.0) {
+                                                        // Tap details to expand/collapse
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .weight(1f)
+                                                                .clickable {
+                                                                    expandedBillId = if (isBillDetailed) null else bill.id
+                                                                }
+                                                                .padding(vertical = 4.dp),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Column(modifier = Modifier.weight(1.0f)) {
                                                                 Text(
-                                                                    text = String.format(Locale.US, "$ %.2f", bill.totalPrice),
-                                                                    style = MaterialTheme.typography.titleSmall,
-                                                                    fontWeight = FontWeight.Black,
-                                                                    color = Color(0xFF006874)
+                                                                    text = "Invoice on $billDate",
+                                                                    style = MaterialTheme.typography.bodyMedium,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = Color(0xFF1D1B20)
+                                                                )
+                                                                val decodedCount = com.example.data.CustomerBill.deserializeItems(bill.itemsJson).size
+                                                                Text(
+                                                                    text = "$decodedCount Timber Wood Item" + if (decodedCount != 1) "s" else "",
+                                                                    style = MaterialTheme.typography.bodySmall,
+                                                                    color = Color(0xFF49454F)
                                                                 )
                                                             }
+                                                            Column(
+                                                                horizontalAlignment = Alignment.End,
+                                                                modifier = Modifier.padding(end = 8.dp)
+                                                            ) {
+                                                                Text(
+                                                                    text = String.format(Locale.US, "%.3f CFT", bill.totalCft),
+                                                                    style = MaterialTheme.typography.bodyMedium,
+                                                                    fontWeight = FontWeight.ExtraBold,
+                                                                    color = Color(0xFF6750A4)
+                                                                )
+                                                                if (bill.totalPrice > 0.0) {
+                                                                    Text(
+                                                                        text = String.format(Locale.US, "$ %.2f", bill.totalPrice),
+                                                                        style = MaterialTheme.typography.titleSmall,
+                                                                        fontWeight = FontWeight.Black,
+                                                                        color = Color(0xFF006874)
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+
+                                                        // Quick individual bill delete icon button
+                                                        IconButton(
+                                                            onClick = {
+                                                                billToDelete = bill
+                                                                showDeleteConfirmationDialog = true
+                                                            },
+                                                            modifier = Modifier
+                                                                .size(40.dp)
+                                                                .testTag("delete_bill_btn_${bill.id}")
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Delete,
+                                                                contentDescription = "Delete Bill",
+                                                                tint = Color.Red.copy(alpha = 0.7f),
+                                                                modifier = Modifier.size(20.dp)
+                                                            )
                                                         }
                                                     }
 
@@ -1629,15 +1713,16 @@ fun CustomerBillsScreen(
                                                                     )
                                                                 }
 
-                                                                // Delete Bill
+                                                                // Delete Bill inside expanded detail view
                                                                 IconButton(
                                                                     onClick = {
-                                                                        viewModel.deleteCustomerBill(bill.id)
-                                                                        Toast.makeText(context, "Deleted saved bill!", Toast.LENGTH_SHORT).show()
+                                                                        billToDelete = bill
+                                                                        showDeleteConfirmationDialog = true
                                                                     },
                                                                     modifier = Modifier
                                                                         .size(36.dp)
-                                                                        .border(1.dp, Color.Red.copy(alpha = 0.3f), RoundedCornerShape(8.dp)),
+                                                                        .border(1.dp, Color.Red.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                                                        .testTag("detail_delete_bill_btn_${bill.id}"),
                                                                     colors = IconButtonDefaults.iconButtonColors(
                                                                         contentColor = Color.Red
                                                                     )
@@ -1661,6 +1746,59 @@ fun CustomerBillsScreen(
                     }
                 }
             }
+        }
+
+        // Delete Confirmation Dialog for accidental click protection
+        if (showDeleteConfirmationDialog && billToDelete != null) {
+            val bill = billToDelete!!
+            val sdf = SimpleDateFormat("dd MMM yyyy, h:mm a", Locale.getDefault())
+            val billDate = sdf.format(Date(bill.timestamp))
+            AlertDialog(
+                onDismissRequest = {
+                    showDeleteConfirmationDialog = false
+                    billToDelete = null
+                },
+                title = {
+                    Text(
+                        text = "Delete Saved Bill",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1D1B20)
+                    )
+                },
+                text = {
+                    Text(
+                        text = "Are you sure you want to permanently delete the saved bill for '${bill.customerName}' created on $billDate?\n\nThis will remove the archived log records permanently.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF49454F)
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.deleteCustomerBill(bill.id)
+                            Toast.makeText(context, "Deleted saved bill for '${bill.customerName}'", Toast.LENGTH_SHORT).show()
+                            showDeleteConfirmationDialog = false
+                            billToDelete = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                        modifier = Modifier.testTag("confirm_delete_bill_btn")
+                    ) {
+                        Text("Delete", color = Color.White)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showDeleteConfirmationDialog = false
+                            billToDelete = null
+                        },
+                        modifier = Modifier.testTag("cancel_delete_bill_btn")
+                    ) {
+                        Text("Cancel", color = Color(0xFF6750A4))
+                    }
+                }
+            )
         }
     }
 }
