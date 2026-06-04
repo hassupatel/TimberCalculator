@@ -19,4 +19,17 @@ interface TallyDao {
 
     @Query("DELETE FROM tally_items")
     suspend fun clearAllItems()
+
+    // Customer Bill operations
+    @Query("SELECT * FROM customer_bills ORDER BY timestamp DESC")
+    fun getAllBills(): Flow<List<CustomerBill>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBill(bill: CustomerBill)
+
+    @Query("DELETE FROM customer_bills WHERE id = :id")
+    suspend fun deleteBillById(id: Int)
+
+    @Query("DELETE FROM customer_bills")
+    suspend fun clearAllBills()
 }

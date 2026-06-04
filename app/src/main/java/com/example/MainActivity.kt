@@ -72,6 +72,11 @@ fun TimberCalculatorApp(
     val context = LocalContext.current
     val tallyList by viewModel.tallyItems.collectAsState()
 
+    // State to toggle between calculator tab and customer bills tab
+    var activeTab by remember { mutableStateOf("calculator") }
+    var showSaveBillDialog by remember { mutableStateOf(false) }
+    var inputCustomerName by remember { mutableStateOf("") }
+
     // Base totals calculations derived from Room Flow state
     val baseTotalCft = tallyList.sumOf { it.calculatedCft }
     val wastageCft = baseTotalCft * viewModel.wastagePercent
@@ -79,100 +84,188 @@ fun TimberCalculatorApp(
     val rate = viewModel.ratePerCft.toDoubleOrNull() ?: 0.0
     val grandTotalPrice = grandTotalCft * rate
 
+    // AlertDialog to input customer name and save bill
+    if (showSaveBillDialog) {
+        AlertDialog(
+            onDismissRequest = { showSaveBillDialog = false },
+            title = {
+                Text(
+                    text = "Save Customer Bill",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1D1B20)
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Assign a customer name to index and save this bill's logs.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF49454F)
+                    )
+                    OutlinedTextField(
+                        value = inputCustomerName,
+                        onValueChange = { inputCustomerName = it },
+                        label = { Text("Customer Name") },
+                        placeholder = { Text("e.g. John Doe") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("save_bill_customer_input"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF6750A4),
+                            focusedLabelColor = Color(0xFF6750A4)
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val name = inputCustomerName.trim()
+                        if (name.isNotEmpty()) {
+                            viewModel.saveCustomerBill(
+                                customerName = name,
+                                subtotal = baseTotalCft,
+                                wastagePercent = viewModel.wastagePercent,
+                                totalCft = grandTotalCft,
+                                rate = rate,
+                                totalPrice = grandTotalPrice,
+                                items = tallyList
+                            )
+                            Toast.makeText(context, "Bill saved successfully under '$name'!", Toast.LENGTH_SHORT).show()
+                            showSaveBillDialog = false
+                            inputCustomerName = ""
+                        } else {
+                            Toast.makeText(context, "Please enter a valid name!", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4))
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSaveBillDialog = false }) {
+                    Text("Cancel", color = Color(0xFF6750A4))
+                }
+            }
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFFF7F2FA)) // Classic High Density soft lavender background
     ) {
-        // High Density Header Bar
-        HeaderSection()
+        // High Density Header Bar sharing tab selection
+        HeaderSection(
+            activeTab = activeTab,
+            onTabChange = { activeTab = it }
+        )
 
-        // Main Scrolling Body Container
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            contentPadding = PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            // Mode Select Toggle Bar
-            item {
-                ModeSelectorTabs(
-                    selectedMode = viewModel.currentMode,
-                    onModeChange = {
-                        viewModel.currentMode = it
-                        viewModel.activeField = if (it == TimberMode.RECTANGULAR) {
-                            ActiveField.RECT_WIDTH
-                        } else {
-                            ActiveField.ROUND_LENGTH
-                        }
-                    }
-                )
-            }
-
-            // Measurement Input Deck
-            item {
-                InputFormCard(viewModel = viewModel)
-            }
-
-            // Live Calculated Subtotal Volume Widget
-            item {
-                ActiveVolumeDisplay(
-                    cftResult = viewModel.currentCalculatedCft,
-                    onAddClick = {
-                        viewModel.addCurrentToTally()
-                        Toast.makeText(context, "Saved log definition!", Toast.LENGTH_SHORT).show()
-                    }
-                )
-            }
-
-            // Ledger Tally Sheets Card
-            item {
-                RecentMeasurementsCard(
-                    tallyList = tallyList,
-                    onDeleteClick = { viewModel.deleteTallyItem(it) },
-                    onRerunClick = { viewModel.rerunCalculation(it) },
-                    onClearAll = { viewModel.clearTally() }
-                )
-            }
-
-            // Material Rates & Summary Control Deck
-            if (tallyList.isNotEmpty()) {
+        if (activeTab == "bills") {
+            CustomerBillsScreen(
+                viewModel = viewModel,
+                onBackToCalculator = { activeTab = "calculator" },
+                modifier = Modifier.weight(1f)
+            )
+        } else {
+            // Main Scrolling Body Container
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Mode Select Toggle Bar
                 item {
-                    InvoiceSummaryCard(
-                        baseTotalCft = baseTotalCft,
-                        wastageCft = wastageCft,
-                        grandTotalCft = grandTotalCft,
-                        grandTotalPrice = grandTotalPrice,
-                        rateString = viewModel.ratePerCft,
-                        activeField = viewModel.activeField,
-                        onRateFocus = { viewModel.activeField = ActiveField.RATE },
-                        selectedWastage = viewModel.wastagePercent,
-                        onWastageChange = { viewModel.wastagePercent = it },
-                        onShareInvoice = {
-                            shareTallyReceipt(
-                                context = context,
-                                items = tallyList,
-                                subtotal = baseTotalCft,
-                                wastagePct = viewModel.wastagePercent,
-                                wastageCft = wastageCft,
-                                totalCft = grandTotalCft,
-                                rate = rate,
-                                totalVal = grandTotalPrice
-                            )
+                    ModeSelectorTabs(
+                        selectedMode = viewModel.currentMode,
+                        onModeChange = {
+                            viewModel.currentMode = it
+                            viewModel.activeField = if (it == TimberMode.RECTANGULAR) {
+                                ActiveField.RECT_WIDTH
+                            } else {
+                                ActiveField.ROUND_LENGTH
+                            }
                         }
                     )
                 }
-            }
-        }
 
-        // Tactile Fixed Keypad Deck
-        KeypadFooter(viewModel = viewModel)
+                // Measurement Input Deck
+                item {
+                    InputFormCard(viewModel = viewModel)
+                }
+
+                // Live Calculated Subtotal Volume Widget
+                item {
+                    ActiveVolumeDisplay(
+                        cftResult = viewModel.currentCalculatedCft,
+                        onAddClick = {
+                            viewModel.addCurrentToTally()
+                            Toast.makeText(context, "Saved log definition!", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                }
+
+                // Ledger Tally Sheets Card
+                item {
+                    RecentMeasurementsCard(
+                        tallyList = tallyList,
+                        onDeleteClick = { viewModel.deleteTallyItem(it) },
+                        onRerunClick = { viewModel.rerunCalculation(it) },
+                        onClearAll = { viewModel.clearTally() }
+                    )
+                }
+
+                // Material Rates & Summary Control Deck
+                if (tallyList.isNotEmpty()) {
+                    item {
+                        InvoiceSummaryCard(
+                            baseTotalCft = baseTotalCft,
+                            wastageCft = wastageCft,
+                            grandTotalCft = grandTotalCft,
+                            grandTotalPrice = grandTotalPrice,
+                            rateString = viewModel.ratePerCft,
+                            activeField = viewModel.activeField,
+                            onRateFocus = { viewModel.activeField = ActiveField.RATE },
+                            selectedWastage = viewModel.wastagePercent,
+                            onWastageChange = { viewModel.wastagePercent = it },
+                            onShareInvoice = {
+                                shareTallyReceipt(
+                                    context = context,
+                                    items = tallyList,
+                                    subtotal = baseTotalCft,
+                                    wastagePct = viewModel.wastagePercent,
+                                    wastageCft = wastageCft,
+                                    totalCft = grandTotalCft,
+                                    rate = rate,
+                                    totalVal = grandTotalPrice
+                                )
+                            },
+                            onSaveBillClick = {
+                                showSaveBillDialog = true
+                            }
+                        )
+                    }
+                }
+            }
+
+            // Tactile Fixed Keypad Deck
+            KeypadFooter(viewModel = viewModel)
+        }
     }
 }
 
 @Composable
-fun HeaderSection() {
+fun HeaderSection(
+    activeTab: String,
+    onTabChange: (String) -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -186,45 +279,93 @@ fun HeaderSection() {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Elegant purple circle avatar
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(Color(0xFF6750A4), RoundedCornerShape(20.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "T",
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+            if (activeTab == "bills") {
+                IconButton(
+                    onClick = { onTabChange("calculator") },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Back to Calculator",
+                        tint = Color(0xFF6750A4)
+                    )
+                }
+            } else {
+                // Elegant purple circle avatar
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(Color(0xFF6750A4), RoundedCornerShape(20.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "T",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
             Column {
                 Text(
-                    text = "TimberCalc Pro",
+                    text = if (activeTab == "bills") "Customer Bills" else "TimberCalc Pro",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF1D1B20),
                     lineHeight = 18.sp
                 )
                 Text(
-                    text = "Merchant Volume Utility",
+                    text = if (activeTab == "bills") "Saved Invoices" else "Merchant Volume Utility",
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFF49454F)
                 )
             }
         }
-        // Top options symbol action for density feel
-        IconButton(
-            onClick = {},
-            modifier = Modifier.size(40.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.MoreVert,
-                contentDescription = null,
-                tint = Color(0xFF49454F)
-            )
+        
+        Box {
+            IconButton(
+                onClick = { showMenu = true },
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "Options Menu",
+                    tint = Color(0xFF49454F)
+                )
+            }
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Timber Calculator") },
+                    onClick = {
+                        onTabChange("calculator")
+                        showMenu = false
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Home,
+                            contentDescription = null,
+                            tint = Color(0xFF6750A4)
+                        )
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Customer Bills") },
+                    onClick = {
+                        onTabChange("bills")
+                        showMenu = false
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.List,
+                            contentDescription = null,
+                            tint = Color(0xFF6750A4)
+                        )
+                    }
+                )
+            }
         }
     }
 }
@@ -733,7 +874,8 @@ fun InvoiceSummaryCard(
     onRateFocus: () -> Unit,
     selectedWastage: Double,
     onWastageChange: (Double) -> Unit,
-    onShareInvoice: () -> Unit
+    onShareInvoice: () -> Unit,
+    onSaveBillClick: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -937,28 +1079,58 @@ fun InvoiceSummaryCard(
                 }
             }
 
-            // Share Digital Receipt Button
-            Button(
-                onClick = onShareInvoice,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF6750A4)
-                ),
-                shape = RoundedCornerShape(12.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Share,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    "SHARE RECEIPT",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold
-                )
+                // Share Digital Receipt Button
+                Button(
+                    onClick = onShareInvoice,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF6750A4)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        "SHARE",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Save Bill Button
+                Button(
+                    onClick = onSaveBillClick,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF006874),
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        "SAVE BILL",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }
@@ -1124,4 +1296,420 @@ fun formatDecimalToFraction(valueStr: String): String {
     } else {
         valueStr
     }
+}
+
+// -----------------------------------------------------------------------------
+// CUSTOMER BILLS MODULE SCREEN & INVOICE MANAGEMENT
+// -----------------------------------------------------------------------------
+
+@Composable
+fun CustomerBillsScreen(
+    viewModel: TimberViewModel,
+    onBackToCalculator: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val billsList by viewModel.customerBills.collectAsState()
+    
+    // Group bills by customer name for standard index list
+    val groupedBills = remember(billsList) {
+        billsList.groupBy { it.customerName }
+    }
+
+    // Keep track of which customer cards are expanded
+    var expandedCustomer by remember { mutableStateOf<String?>(null) }
+    // Inside each customer, we can click to expand particular bills details
+    var expandedBillId by remember { mutableStateOf<Int?>(null) }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color(0xFFF7F2FA))
+    ) {
+        if (billsList.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.List,
+                        contentDescription = "No Bills",
+                        modifier = Modifier.size(64.dp),
+                        tint = Color(0xFF6750A4).copy(alpha = 0.4f)
+                    )
+                    Text(
+                        text = "No saved customer bills yet.",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF49454F)
+                    )
+                    Text(
+                        text = "Add wood logs to your tally sheet on the main tab, then select 'Save Bill' to archive the summaries here.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        color = Color(0xFF49454F).copy(alpha = 0.7f)
+                    )
+                    Button(
+                        onClick = onBackToCalculator,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4))
+                    ) {
+                        Text("Fresh Draft Tally Sheet")
+                    }
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                groupedBills.forEach { (customerName, bills) ->
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            border = BorderStroke(1.dp, Color(0xFFCAC4D0))
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                // Header row of customer group
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            expandedCustomer = if (expandedCustomer == customerName) null else customerName
+                                        }
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .background(Color(0xFFEADDFF), RoundedCornerShape(18.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = customerName.firstOrNull()?.uppercase() ?: "C",
+                                                color = Color(0xFF21005D),
+                                                fontWeight = FontWeight.Bold,
+                                                style = MaterialTheme.typography.titleSmall
+                                            )
+                                        }
+                                        Column {
+                                            Text(
+                                                text = customerName,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF1D1B20)
+                                            )
+                                            val count = bills.size
+                                            Text(
+                                                text = if (count == 1) "1 Saved Invoice" else "$count Saved Invoices",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = Color(0xFF49454F)
+                                            )
+                                        }
+                                    }
+                                    
+                                    Icon(
+                                        imageVector = if (expandedCustomer == customerName) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                        contentDescription = "Expand/Collapse",
+                                        tint = Color(0xFF49454F)
+                                    )
+                                }
+
+                                if (expandedCustomer == customerName) {
+                                    HorizontalDivider(
+                                        color = Color(0xFFE7E0EC),
+                                        thickness = 1.dp,
+                                        modifier = Modifier.padding(vertical = 10.dp)
+                                    )
+                                    
+                                    // List Bills for this Customer
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        bills.forEachIndexed { billIndex, bill ->
+                                            val isBillDetailed = expandedBillId == bill.id
+                                            val sdf = SimpleDateFormat("dd MMM yyyy, h:mm a", Locale.getDefault())
+                                            val billDate = sdf.format(Date(bill.timestamp))
+                                            
+                                            // Individual Bill Row Card
+                                            Card(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = RoundedCornerShape(10.dp),
+                                                colors = CardDefaults.cardColors(containerColor = Color(0xFFF7F2FA).copy(alpha = 0.5f)),
+                                                border = BorderStroke(0.5.dp, Color(0xFFCAC4D0))
+                                            ) {
+                                                Column(modifier = Modifier.padding(10.dp)) {
+                                                    // Top Row click to expand items list
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable {
+                                                                expandedBillId = if (isBillDetailed) null else bill.id
+                                                            },
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Column(modifier = Modifier.weight(1.0f)) {
+                                                            Text(
+                                                                text = "Invoice on $billDate",
+                                                                style = MaterialTheme.typography.bodyMedium,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = Color(0xFF1D1B20)
+                                                            )
+                                                            val decodedCount = com.example.data.CustomerBill.deserializeItems(bill.itemsJson).size
+                                                            Text(
+                                                                text = "$decodedCount Timber Wood Item" + if (decodedCount != 1) "s" else "",
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = Color(0xFF49454F)
+                                                            )
+                                                        }
+                                                        Column(horizontalAlignment = Alignment.End) {
+                                                            Text(
+                                                                text = String.format(Locale.US, "%.3f CFT", bill.totalCft),
+                                                                style = MaterialTheme.typography.bodyMedium,
+                                                                fontWeight = FontWeight.ExtraBold,
+                                                                color = Color(0xFF6750A4)
+                                                            )
+                                                            if (bill.totalPrice > 0.0) {
+                                                                Text(
+                                                                    text = String.format(Locale.US, "$ %.2f", bill.totalPrice),
+                                                                    style = MaterialTheme.typography.titleSmall,
+                                                                    fontWeight = FontWeight.Black,
+                                                                    color = Color(0xFF006874)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // Expanded items details & actions
+                                                    if (isBillDetailed) {
+                                                        HorizontalDivider(
+                                                            color = Color(0xFFE7E0EC),
+                                                            thickness = 0.5.dp,
+                                                            modifier = Modifier.padding(vertical = 8.dp)
+                                                        )
+
+                                                        val billItems = com.example.data.CustomerBill.deserializeItems(bill.itemsJson)
+                                                        Column(
+                                                            modifier = Modifier.padding(horizontal = 4.dp),
+                                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                        ) {
+                                                            billItems.forEachIndexed { itemIdx, item ->
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                                    verticalAlignment = Alignment.CenterVertically
+                                                                ) {
+                                                                    val nameIndex = itemIdx + 1
+                                                                    val itemLabel = if (item.type == "RECTANGULAR") {
+                                                                        val pcs = if (item.units > 1) " × ${item.units} pcs" else ""
+                                                                        "$nameIndex. Sawn: ${item.width}\" w × ${item.thickness}\" t × ${item.length}′ l$pcs"
+                                                                    } else {
+                                                                        val rule = if (item.useHoppusRule) "Hoppus" else "Cylinder"
+                                                                        "$nameIndex. Log ($rule): G: ${item.girth}\" × L: ${item.length}′"
+                                                                    }
+                                                                    Text(
+                                                                        text = itemLabel,
+                                                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                                                        color = Color(0xFF49454F),
+                                                                        modifier = Modifier.weight(1.0f)
+                                                                    )
+                                                                    Text(
+                                                                        text = String.format(Locale.US, "%.3f CFT", item.calculatedCft),
+                                                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        color = Color(0xFF1D1B20)
+                                                                    )
+                                                                }
+                                                            }
+                                                            
+                                                            HorizontalDivider(
+                                                                color = Color(0xFFE7E0EC),
+                                                                thickness = 0.5.dp,
+                                                                modifier = Modifier.padding(vertical = 6.dp)
+                                                            )
+
+                                                            // Metadata subtotal wastage rows
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween
+                                                            ) {
+                                                                Text(
+                                                                    text = "Subtotal: ${String.format(Locale.US, "%.3f CFT", bill.subtotalCft)}" +
+                                                                            if (bill.wastagePercent > 0.0) " | Wastage: +${(bill.wastagePercent * 100).toInt()}%" else "",
+                                                                    style = MaterialTheme.typography.labelSmall,
+                                                                    color = Color(0xFF49454F)
+                                                                )
+                                                                if (bill.ratePerCft > 0.0) {
+                                                                    Text(
+                                                                        text = "Rate: $ ${String.format(Locale.US, "%.2f", bill.ratePerCft)}",
+                                                                        style = MaterialTheme.typography.labelSmall,
+                                                                        color = Color(0xFF49454F)
+                                                                    )
+                                                                }
+                                                            }
+
+                                                            Spacer(modifier = Modifier.height(10.dp))
+
+                                                            // Action Bar triggers
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                            ) {
+                                                                // Restore draft to workspace
+                                                                OutlinedButton(
+                                                                    onClick = {
+                                                                        viewModel.restoreBill(bill)
+                                                                        Toast.makeText(context, "Restored bill draft to active workspace!", Toast.LENGTH_SHORT).show()
+                                                                        onBackToCalculator()
+                                                                    },
+                                                                    modifier = Modifier
+                                                                        .weight(1.0f)
+                                                                        .height(36.dp),
+                                                                    shape = RoundedCornerShape(8.dp),
+                                                                    contentPadding = PaddingValues(0.dp),
+                                                                    colors = ButtonDefaults.outlinedButtonColors(
+                                                                        contentColor = Color(0xFF6750A4)
+                                                                    ),
+                                                                    border = BorderStroke(1.dp, Color(0xFF6750A4))
+                                                                ) {
+                                                                    Icon(
+                                                                        imageVector = Icons.Default.Refresh,
+                                                                        contentDescription = null,
+                                                                        modifier = Modifier.size(14.dp)
+                                                                    )
+                                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                                    Text(
+                                                                        text = "RESTORE DRAFT",
+                                                                        style = MaterialTheme.typography.labelSmall,
+                                                                        fontWeight = FontWeight.Bold
+                                                                    )
+                                                                }
+
+                                                                // Share Bill text
+                                                                Button(
+                                                                    onClick = {
+                                                                        shareSavedBillTally(context, customerName, bill)
+                                                                    },
+                                                                    modifier = Modifier
+                                                                        .weight(1.0f)
+                                                                        .height(36.dp),
+                                                                    shape = RoundedCornerShape(8.dp),
+                                                                    contentPadding = PaddingValues(0.dp),
+                                                                    colors = ButtonDefaults.buttonColors(
+                                                                        containerColor = Color(0xFF6750A4),
+                                                                        contentColor = Color.White
+                                                                    )
+                                                                ) {
+                                                                    Icon(
+                                                                        imageVector = Icons.Default.Share,
+                                                                        contentDescription = null,
+                                                                        modifier = Modifier.size(14.dp)
+                                                                    )
+                                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                                    Text(
+                                                                        text = "SHARE",
+                                                                        style = MaterialTheme.typography.labelSmall,
+                                                                        fontWeight = FontWeight.Bold
+                                                                    )
+                                                                }
+
+                                                                // Delete Bill
+                                                                IconButton(
+                                                                    onClick = {
+                                                                        viewModel.deleteCustomerBill(bill.id)
+                                                                        Toast.makeText(context, "Deleted saved bill!", Toast.LENGTH_SHORT).show()
+                                                                    },
+                                                                    modifier = Modifier
+                                                                        .size(36.dp)
+                                                                        .border(1.dp, Color.Red.copy(alpha = 0.3f), RoundedCornerShape(8.dp)),
+                                                                    colors = IconButtonDefaults.iconButtonColors(
+                                                                        contentColor = Color.Red
+                                                                    )
+                                                                ) {
+                                                                    Icon(
+                                                                        imageVector = Icons.Default.Delete,
+                                                                        contentDescription = "Delete Bill",
+                                                                        modifier = Modifier.size(16.dp)
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Share text format sender for saved bills
+private fun shareSavedBillTally(
+    context: android.content.Context,
+    customerName: String,
+    bill: com.example.data.CustomerBill
+) {
+    val items = com.example.data.CustomerBill.deserializeItems(bill.itemsJson)
+    val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+    val dateString = sdf.format(Date(bill.timestamp))
+    
+    val message = java.lang.StringBuilder().apply {
+        append("🌲 *TIMBER CUSTOMER RECEIPT* 🌲\n")
+        append("👤 Customer: $customerName\n")
+        append("📅 Invoice Date: $dateString\n")
+        append("==============================\n")
+        items.forEachIndexed { idx, item ->
+            val num = idx + 1
+            if (item.type == "RECTANGULAR") {
+                val pcsString = if (item.units > 1) " × ${item.units} pcs" else ""
+                append("$num. Sawn: ${item.width}\" W × ${item.thickness}\" T × ${item.length}′ L$pcsString = ")
+                append(String.format(java.util.Locale.US, "%.3f CFT\n", item.calculatedCft))
+            } else {
+                val rule = if (item.useHoppusRule) "Hoppus" else "Cylinder"
+                append("$num. Log ($rule): G: ${item.girth}\" × L: ${item.length}′ = ")
+                append(String.format(java.util.Locale.US, "%.3f CFT\n", item.calculatedCft))
+            }
+        }
+        append("==============================\n")
+        append(String.format(java.util.Locale.US, "Subtotal: %.3f CFT\n", bill.subtotalCft))
+        if (bill.wastagePercent > 0.0) {
+            append(String.format(java.util.Locale.US, "Wastage Loss (+%.0f%%): %.3f CFT\n", bill.wastagePercent * 100, bill.subtotalCft * bill.wastagePercent))
+        }
+        append(String.format(java.util.Locale.US, "Total Net Wood: %.3f CFT\n", bill.totalCft))
+        if (bill.ratePerCft > 0.0) {
+            append(String.format(java.util.Locale.US, "Rate: $ %.2f / CFT\n", bill.ratePerCft))
+            append(String.format(java.util.Locale.US, "------------------------------\n"))
+            append(String.format(java.util.Locale.US, "💡 *GRAND TOTAL PRICE: $ %.2f*\n", bill.totalPrice))
+        }
+        append("==============================\n")
+        append("Calculated via *Timber CFT Calculator App*")
+    }.toString()
+
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, message)
+    }
+    context.startActivity(Intent.createChooser(intent, "Share Customer Invoice"))
 }

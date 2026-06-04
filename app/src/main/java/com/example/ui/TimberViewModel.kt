@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.AppDatabase
 import com.example.data.TallyItem
 import com.example.data.TallyRepository
+import com.example.data.CustomerBill
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -36,6 +37,13 @@ class TimberViewModel(application: Application) : AndroidViewModel(application) 
 
     // Reactive list of tally items from database
     val tallyItems: StateFlow<List<TallyItem>> = repository.allItems.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    // Reactive list of saved customer bills from database
+    val customerBills: StateFlow<List<CustomerBill>> = repository.allBills.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
@@ -247,6 +255,59 @@ class TimberViewModel(application: Application) : AndroidViewModel(application) 
             roundLength = item.length.let { formatValueForInput(it) }
             useHoppusRule = item.useHoppusRule
             activeField = ActiveField.ROUND_LENGTH
+        }
+    }
+
+    // Customer Bill actions
+    fun saveCustomerBill(
+        customerName: String,
+        subtotal: Double,
+        wastagePercent: Double,
+        totalCft: Double,
+        rate: Double,
+        totalPrice: Double,
+        items: List<TallyItem>
+    ) {
+        val serialized = CustomerBill.serializeItems(items)
+        val bill = CustomerBill(
+            customerName = customerName.trim(),
+            subtotalCft = subtotal,
+            wastagePercent = wastagePercent,
+            totalCft = totalCft,
+            ratePerCft = rate,
+            totalPrice = totalPrice,
+            itemsJson = serialized
+        )
+        viewModelScope.launch {
+            repository.insertBill(bill)
+            repository.clearAll() // Clear active slate to start new tally sheet
+            clearAllCurrentInputs()
+        }
+    }
+
+    fun deleteCustomerBill(id: Int) {
+        viewModelScope.launch {
+            repository.deleteBill(id)
+        }
+    }
+
+    fun restoreBill(bill: CustomerBill) {
+        val items = CustomerBill.deserializeItems(bill.itemsJson)
+        viewModelScope.launch {
+            repository.restoreLiveTally(items)
+            
+            // Recover rate and wastage from saved bill state
+            ratePerCft = if (bill.ratePerCft > 0.0) {
+                if (bill.ratePerCft % 1.0 == 0.0) bill.ratePerCft.toInt().toString() else bill.ratePerCft.toString()
+            } else ""
+            wastagePercent = bill.wastagePercent
+            activeField = if (items.firstOrNull()?.type == "RECTANGULAR") {
+                currentMode = TimberMode.RECTANGULAR
+                ActiveField.RECT_WIDTH
+            } else {
+                currentMode = TimberMode.ROUND
+                ActiveField.ROUND_LENGTH
+            }
         }
     }
 }
