@@ -57,6 +57,18 @@ class TimberViewModel(application: Application) : AndroidViewModel(application) 
     var activeField: ActiveField
         get() = _activeField
         set(value) {
+            // Reset RECT_UNITS to "1" if leaving it and blank
+            if (_activeField == ActiveField.RECT_UNITS && value != ActiveField.RECT_UNITS) {
+                if (rectUnits.isBlank()) {
+                    rectUnits = "1"
+                }
+            }
+            // Clear RECT_UNITS to empty string if entering it and currently is "1"
+            if (value == ActiveField.RECT_UNITS) {
+                if (rectUnits == "1") {
+                    rectUnits = ""
+                }
+            }
             _activeField = value
             isKeyboardCollapsed = false
         }
@@ -316,6 +328,101 @@ class TimberViewModel(application: Application) : AndroidViewModel(application) 
                 ActiveField.ROUND_LENGTH
             }
         }
+    }
+
+    // Receipt Custom Format Outline Section
+    private val prefs = application.getSharedPreferences("timber_prefs", android.content.Context.MODE_PRIVATE)
+
+    val DEFAULT_RECEIPT_TEMPLATE = """
+🌲 *TIMBER RECEIPT* 🌲
+👤 Customer: {customer}
+📅 Date: {date}
+==============================
+{items}
+==============================
+Subtotal: {subtotal}
+{wastage}
+Total Net Wood: {total_cft}
+Rate: {rate}
+------------------------------
+💡 *GRAND TOTAL PRICE: {total_price}*
+==============================
+Calculated fast via *Timber CFT Calculator App*
+""".trimIndent()
+
+    var receiptTemplate by mutableStateOf("")
+        private set
+
+    init {
+        receiptTemplate = prefs.getString("receipt_template", DEFAULT_RECEIPT_TEMPLATE) ?: DEFAULT_RECEIPT_TEMPLATE
+    }
+
+    fun saveReceiptTemplate(newTemplate: String) {
+        receiptTemplate = newTemplate
+        prefs.edit().putString("receipt_template", newTemplate).apply()
+    }
+
+    fun resetReceiptTemplate() {
+        saveReceiptTemplate(DEFAULT_RECEIPT_TEMPLATE)
+    }
+
+    fun formatReceiptText(
+        customerName: String,
+        dateString: String,
+        itemsList: List<TallyItem>,
+        subtotalCft: Double,
+        wastagePct: Double,
+        wastageCft: Double,
+        totalCft: Double,
+        rate: Double,
+        totalVal: Double
+    ): String {
+        val itemsStr = StringBuilder().apply {
+            itemsList.forEachIndexed { idx, item ->
+                val num = idx + 1
+                if (item.type == "RECTANGULAR") {
+                    val pcsString = if (item.units > 1) " × ${item.units} pcs" else ""
+                    append("$num. Sawn: ${item.width}\" W × ${item.thickness}\" T × ${item.length}′ L$pcsString = ")
+                    append(String.format(java.util.Locale.US, "%.3f CFT\n", item.calculatedCft))
+                } else {
+                    val rule = if (item.useHoppusRule) "Hoppus" else "Cylinder"
+                    append("$num. Log ($rule): G: ${item.girth}\" × L: ${item.length}′ = ")
+                    append(String.format(java.util.Locale.US, "%.3f CFT\n", item.calculatedCft))
+                }
+            }
+        }.toString().trim()
+
+        val subtotalStr = String.format(java.util.Locale.US, "%.3f CFT", subtotalCft)
+        
+        val wastageStr = if (wastagePct > 0.0) {
+            String.format(java.util.Locale.US, "Wastage Loss (+%.0f%%): %.3f CFT", wastagePct * 100, wastageCft)
+        } else {
+            "Wastage Loss: N/A"
+        }
+
+        val totalCftStr = String.format(java.util.Locale.US, "%.3f CFT", totalCft)
+        
+        val rateStr = if (rate > 0.0) {
+            String.format(java.util.Locale.US, "$ %.2f / CFT", rate)
+        } else {
+            "N/A"
+        }
+
+        val totalPriceStr = if (totalVal > 0.0) {
+            String.format(java.util.Locale.US, "$ %.2f", totalVal)
+        } else {
+            "N/A"
+        }
+
+        return receiptTemplate
+            .replace("{customer}", if (customerName.isNotBlank()) customerName else "Cash/Walk-in")
+            .replace("{date}", dateString)
+            .replace("{items}", itemsStr)
+            .replace("{subtotal}", subtotalStr)
+            .replace("{wastage}", wastageStr)
+            .replace("{total_cft}", totalCftStr)
+            .replace("{rate}", rateStr)
+            .replace("{total_price}", totalPriceStr)
     }
 
     fun moveToNextField() {

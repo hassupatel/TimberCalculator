@@ -15,6 +15,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -177,6 +180,12 @@ fun TimberCalculatorApp(
                 onBackToCalculator = { activeTab = "calculator" },
                 modifier = Modifier.weight(1f)
             )
+        } else if (activeTab == "template") {
+            RecipeTemplateScreen(
+                viewModel = viewModel,
+                onBackToCalculator = { activeTab = "calculator" },
+                modifier = Modifier.weight(1f)
+            )
         } else {
             // Main Scrolling Body Container
             LazyColumn(
@@ -241,16 +250,20 @@ fun TimberCalculatorApp(
                             selectedWastage = viewModel.wastagePercent,
                             onWastageChange = { viewModel.wastagePercent = it },
                             onShareInvoice = {
-                                shareTallyReceipt(
-                                    context = context,
-                                    items = tallyList,
-                                    subtotal = baseTotalCft,
+                                val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+                                val dateStr = sdf.format(Date())
+                                val formattedMessage = viewModel.formatReceiptText(
+                                    customerName = "",
+                                    dateString = dateStr,
+                                    itemsList = tallyList,
+                                    subtotalCft = baseTotalCft,
                                     wastagePct = viewModel.wastagePercent,
                                     wastageCft = wastageCft,
                                     totalCft = grandTotalCft,
                                     rate = rate,
                                     totalVal = grandTotalPrice
                                 )
+                                shareReceipt(context, formattedMessage)
                             },
                             onSaveBillClick = {
                                 showSaveBillDialog = true
@@ -285,7 +298,7 @@ fun HeaderSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            if (activeTab == "bills") {
+            if (activeTab == "bills" || activeTab == "template") {
                 IconButton(
                     onClick = { onTabChange("calculator") },
                     modifier = Modifier.size(40.dp)
@@ -314,14 +327,22 @@ fun HeaderSection(
             }
             Column {
                 Text(
-                    text = if (activeTab == "bills") "Customer Bills" else "TimberCalc Pro",
+                    text = when (activeTab) {
+                        "bills" -> "Customer Bills"
+                        "template" -> "Receipt Outline"
+                        else -> "TimberCalc Pro"
+                    },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF1D1B20),
                     lineHeight = 18.sp
                 )
                 Text(
-                    text = if (activeTab == "bills") "Saved Invoices" else "Merchant Volume Utility",
+                    text = when (activeTab) {
+                        "bills" -> "Saved Invoices"
+                        "template" -> "Configure Share Text"
+                        else -> "Merchant Volume Utility"
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFF49454F)
                 )
@@ -366,6 +387,20 @@ fun HeaderSection(
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.List,
+                            contentDescription = null,
+                            tint = Color(0xFF6750A4)
+                        )
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Receipt Template") },
+                    onClick = {
+                        onTabChange("template")
+                        showMenu = false
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
                             contentDescription = null,
                             tint = Color(0xFF6750A4)
                         )
@@ -1285,51 +1320,11 @@ fun KeypadFooter(
     }
 }
 
-// Share text receipt sender
-private fun shareTallyReceipt(
+// Share text receipt sender helper
+private fun shareReceipt(
     context: android.content.Context,
-    items: List<TallyItem>,
-    subtotal: Double,
-    wastagePct: Double,
-    wastageCft: Double,
-    totalCft: Double,
-    rate: Double,
-    totalVal: Double
+    message: String
 ) {
-    val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-    val currentDateString = sdf.format(Date())
-
-    val message = StringBuilder().apply {
-        append("🌲 *TIMBER ESTIMATION RECEIPT* 🌲\n")
-        append("📅 Date: $currentDateString\n")
-        append("==============================\n")
-        items.forEachIndexed { idx, item ->
-            val num = idx + 1
-            if (item.type == "RECTANGULAR") {
-                val pcsString = if (item.units > 1) " × ${item.units} pcs" else ""
-                append("$num. Sawn: ${item.width}\" W × ${item.thickness}\" T × ${item.length}′ L$pcsString = ")
-                append(String.format(java.util.Locale.US, "%.3f CFT\n", item.calculatedCft))
-            } else {
-                val rule = if (item.useHoppusRule) "Hoppus" else "Cylinder"
-                append("$num. Log ($rule): G: ${item.girth}\" × L: ${item.length}′ = ")
-                append(String.format(java.util.Locale.US, "%.3f CFT\n", item.calculatedCft))
-            }
-        }
-        append("==============================\n")
-        append(String.format(java.util.Locale.US, "Subtotal: %.3f CFT\n", subtotal))
-        if (wastagePct > 0.0) {
-            append(String.format(java.util.Locale.US, "Wastage Loss (+%.0f%%): %.3f CFT\n", wastagePct * 100, wastageCft))
-        }
-        append(String.format(java.util.Locale.US, "Total Net Wood: %.3f CFT\n", totalCft))
-        if (rate > 0.0) {
-            append(String.format(java.util.Locale.US, "Rate: $ %.2f / CFT\n", rate))
-            append(String.format(java.util.Locale.US, "------------------------------\n"))
-            append(String.format(java.util.Locale.US, "💡 *GRAND TOTAL PRICE: $ %.2f*\n", totalVal))
-        }
-        append("==============================\n")
-        append("Calculated fast via *Timber CFT Calculator App*")
-    }.toString()
-
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
         putExtra(Intent.EXTRA_TEXT, message)
@@ -1353,6 +1348,245 @@ fun formatDecimalToFraction(valueStr: String): String {
         "$whole $fracSymbol"
     } else {
         valueStr
+    }
+}
+
+// -----------------------------------------------------------------------------
+// RECEIPT CUSTOMIZATION OUTLINE CONFIGURATION SCREEN
+// -----------------------------------------------------------------------------
+
+@Composable
+fun RecipeTemplateScreen(
+    viewModel: TimberViewModel,
+    onBackToCalculator: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val scrollState = rememberScrollState()
+    var localTemplate by remember { mutableStateOf(viewModel.receiptTemplate) }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color(0xFFF7F2FA))
+            .verticalScroll(scrollState)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Explanatory Info Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFEADDFF)),
+            border = BorderStroke(0.5.dp, Color(0xFF6750A4))
+        ) {
+            Row(
+                modifier = Modifier.padding(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = "Info",
+                    tint = Color(0xFF21005D),
+                    modifier = Modifier.size(24.dp)
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Customize Share Outline",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF21005D)
+                    )
+                    Text(
+                        text = "Design your own custom text layout for shared receipts! Use bracket tags like {customer} or {total_price} below, and the app will automatically fill in the values when sharing.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF21005D).copy(alpha = 0.8f)
+                    )
+                }
+            }
+        }
+
+        // Editor Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            border = BorderStroke(1.dp, Color(0xFFCAC4D0))
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "OUTLINE EDITOR",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF49454F)
+                    )
+                    
+                    // Reset to Defaults
+                    TextButton(
+                        onClick = {
+                            viewModel.resetReceiptTemplate()
+                            localTemplate = viewModel.receiptTemplate
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Reset Template",
+                            tint = Color(0xFFB3261E),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "RESET DEFAULT",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFB3261E)
+                        )
+                    }
+                }
+
+                // Text Field Editor
+                OutlinedTextField(
+                    value = localTemplate,
+                    onValueChange = { newVal ->
+                        localTemplate = newVal
+                        viewModel.saveReceiptTemplate(newVal)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .testTag("receipt_template_text_editor"),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        color = Color(0xFF1D1B20)
+                    ),
+                    placeholder = {
+                        Text(
+                            text = "Enter customized share receipt template outline...",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF6750A4),
+                        unfocusedBorderColor = Color(0xFFCAC4D0)
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                // Quick Tag Chooser Header
+                Text(
+                    text = "Tap tag below to insert:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF49454F),
+                    fontWeight = FontWeight.Bold
+                )
+
+                // Tags horizontal scroll row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val tags = listOf(
+                        Pair("{customer}", "Customer"),
+                        Pair("{date}", "Date"),
+                        Pair("{items}", "Items List"),
+                        Pair("{subtotal}", "Subtotal"),
+                        Pair("{wastage}", "Wastage"),
+                        Pair("{total_cft}", "Net CFT"),
+                        Pair("{rate}", "Rate"),
+                        Pair("{total_price}", "Total Price")
+                    )
+
+                    tags.forEach { tagPair ->
+                        SuggestionChip(
+                            onClick = {
+                                localTemplate = localTemplate + " " + tagPair.first
+                                viewModel.saveReceiptTemplate(localTemplate)
+                            },
+                            label = {
+                                Text(
+                                    text = tagPair.first,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF21005D)
+                                )
+                            },
+                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                containerColor = Color(0xFFEADDFF).copy(alpha = 0.5f),
+                                labelColor = Color(0xFF21005D)
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        // Live Formatting Preview Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            border = BorderStroke(1.dp, Color(0xFFCAC4D0))
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "RECEIPT LIVE PREVIEW",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF49454F)
+                )
+
+                // Simulated receipts scroll paper tape container
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFFFFBEB), RoundedCornerShape(8.dp))
+                        .border(BorderStroke(1.dp, Color(0xFFE7E0EC)), RoundedCornerShape(8.dp))
+                        .padding(12.dp)
+                ) {
+                    val sampleItems = listOf(
+                        TallyItem(id = 1, type = "RECTANGULAR", width = 6.0, thickness = 3.0, length = 12.0, units = 5, calculatedCft = 15.0, useHoppusRule = true),
+                        TallyItem(id = 2, type = "ROUND", width = 0.0, thickness = 0.0, length = 10.0, units = 1, calculatedCft = 10.0, girth = 48.0, useHoppusRule = true)
+                    )
+                    
+                    val formattedPreview = viewModel.formatReceiptText(
+                        customerName = "Ram Timber Traders Ltd",
+                        dateString = "2026-06-05 14:15",
+                        itemsList = sampleItems,
+                        subtotalCft = 25.0,
+                        wastagePct = 0.10,
+                        wastageCft = 2.5,
+                        totalCft = 27.5,
+                        rate = 18.0,
+                        totalVal = 495.0
+                    )
+
+                    Text(
+                        text = formattedPreview,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        color = Color(0xFF1D1B20),
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(30.dp))
     }
 }
 
@@ -1694,7 +1928,21 @@ fun CustomerBillsScreen(
                                                                 // Share Bill text
                                                                 Button(
                                                                     onClick = {
-                                                                        shareSavedBillTally(context, customerName, bill)
+                                                                        val sdfDetail = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+                                                                         val dateStrDetail = sdfDetail.format(Date(bill.timestamp))
+                                                                         val itemsDetail = com.example.data.CustomerBill.deserializeItems(bill.itemsJson)
+                                                                         val textBody = viewModel.formatReceiptText(
+                                                                             customerName = customerName,
+                                                                             dateString = dateStrDetail,
+                                                                             itemsList = itemsDetail,
+                                                                             subtotalCft = bill.subtotalCft,
+                                                                             wastagePct = bill.wastagePercent,
+                                                                             wastageCft = bill.subtotalCft * bill.wastagePercent,
+                                                                             totalCft = bill.totalCft,
+                                                                             rate = bill.ratePerCft,
+                                                                             totalVal = bill.totalPrice
+                                                                         )
+                                                                         shareReceipt(context, textBody)
                                                                     },
                                                                     modifier = Modifier
                                                                         .weight(1.0f)
@@ -1809,51 +2057,4 @@ fun CustomerBillsScreen(
     }
 }
 
-// Share text format sender for saved bills
-private fun shareSavedBillTally(
-    context: android.content.Context,
-    customerName: String,
-    bill: com.example.data.CustomerBill
-) {
-    val items = com.example.data.CustomerBill.deserializeItems(bill.itemsJson)
-    val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-    val dateString = sdf.format(Date(bill.timestamp))
-    
-    val message = java.lang.StringBuilder().apply {
-        append("🌲 *TIMBER CUSTOMER RECEIPT* 🌲\n")
-        append("👤 Customer: $customerName\n")
-        append("📅 Invoice Date: $dateString\n")
-        append("==============================\n")
-        items.forEachIndexed { idx, item ->
-            val num = idx + 1
-            if (item.type == "RECTANGULAR") {
-                val pcsString = if (item.units > 1) " × ${item.units} pcs" else ""
-                append("$num. Sawn: ${item.width}\" W × ${item.thickness}\" T × ${item.length}′ L$pcsString = ")
-                append(String.format(java.util.Locale.US, "%.3f CFT\n", item.calculatedCft))
-            } else {
-                val rule = if (item.useHoppusRule) "Hoppus" else "Cylinder"
-                append("$num. Log ($rule): G: ${item.girth}\" × L: ${item.length}′ = ")
-                append(String.format(java.util.Locale.US, "%.3f CFT\n", item.calculatedCft))
-            }
-        }
-        append("==============================\n")
-        append(String.format(java.util.Locale.US, "Subtotal: %.3f CFT\n", bill.subtotalCft))
-        if (bill.wastagePercent > 0.0) {
-            append(String.format(java.util.Locale.US, "Wastage Loss (+%.0f%%): %.3f CFT\n", bill.wastagePercent * 100, bill.subtotalCft * bill.wastagePercent))
-        }
-        append(String.format(java.util.Locale.US, "Total Net Wood: %.3f CFT\n", bill.totalCft))
-        if (bill.ratePerCft > 0.0) {
-            append(String.format(java.util.Locale.US, "Rate: $ %.2f / CFT\n", bill.ratePerCft))
-            append(String.format(java.util.Locale.US, "------------------------------\n"))
-            append(String.format(java.util.Locale.US, "💡 *GRAND TOTAL PRICE: $ %.2f*\n", bill.totalPrice))
-        }
-        append("==============================\n")
-        append("Calculated via *Timber CFT Calculator App*")
-    }.toString()
 
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, message)
-    }
-    context.startActivity(Intent.createChooser(intent, "Share Customer Invoice"))
-}
