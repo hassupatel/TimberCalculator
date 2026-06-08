@@ -89,7 +89,8 @@ fun TimberCalculatorApp(
     var inputCompiledCustomerName by remember { mutableStateOf("") }
 
     // Base totals calculations derived from Room Flow state
-    val baseTotalCft = tallyList.sumOf { it.calculatedCft }
+    val activeTallyList = tallyList.filter { it.rate == 0.0 }
+    val baseTotalCft = activeTallyList.sumOf { it.calculatedCft }
     val wastageCft = baseTotalCft * viewModel.wastagePercent
     val grandTotalCft = baseTotalCft + wastageCft
     val rate = viewModel.ratePerCft.toDoubleOrNull() ?: 0.0
@@ -143,7 +144,7 @@ fun TimberCalculatorApp(
                                 totalCft = grandTotalCft,
                                 rate = rate,
                                 totalPrice = grandTotalPrice,
-                                items = tallyList
+                                items = activeTallyList
                             )
                             Toast.makeText(context, "Bill saved successfully under '$name'!", Toast.LENGTH_SHORT).show()
                             showSaveBillDialog = false
@@ -313,7 +314,7 @@ fun TimberCalculatorApp(
                 }
 
                 // Material Rates & Summary Control Deck
-                if (tallyList.isNotEmpty()) {
+                if (activeTallyList.isNotEmpty()) {
                     item {
                         InvoiceSummaryCard(
                             baseTotalCft = baseTotalCft,
@@ -331,7 +332,7 @@ fun TimberCalculatorApp(
                                 val formattedMessage = viewModel.formatReceiptText(
                                     customerName = "",
                                     dateString = dateStr,
-                                    itemsList = tallyList,
+                                    itemsList = activeTallyList,
                                     subtotalCft = baseTotalCft,
                                     wastagePct = viewModel.wastagePercent,
                                     wastageCft = wastageCft,
@@ -345,7 +346,7 @@ fun TimberCalculatorApp(
                                 showSaveBillDialog = true
                             },
                             onAddToCompiledBillClick = {
-                                viewModel.addTallyToPendingBill(tallyList, rate)
+                                viewModel.addTallyToPendingBill(activeTallyList, rate)
                                 Toast.makeText(context, "Added batch of wood to the compiled bill!", Toast.LENGTH_SHORT).show()
                             }
                         )
@@ -977,6 +978,14 @@ fun RecentMeasurementsCard(
                                 color = Color(0xFF1D1B20),
                                 fontWeight = FontWeight.Bold
                             )
+                            if (item.rate > 0.0) {
+                                Text(
+                                    text = String.format(java.util.Locale.US, "Added @ $ %.2f / CFT", item.rate),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFF6750A4),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -1335,6 +1344,10 @@ fun CompiledBillCard(
     onSaveBillClick: () -> Unit,
     onShareBillClick: () -> Unit
 ) {
+    var showEditRateDialog by remember { mutableStateOf(false) }
+    var editingIndex by remember { mutableStateOf(-1) }
+    var editRateString by remember { mutableStateOf("") }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -1421,12 +1434,32 @@ fun CompiledBillCard(
                                 color = Color(0xFF49454F)
                             )
                         }
-                        Text(
-                            text = String.format(java.util.Locale.US, "$ %.2f", itemPrice),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1D1B20)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = String.format(java.util.Locale.US, "$ %.2f", itemPrice),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1D1B20)
+                            )
+                            IconButton(
+                                onClick = {
+                                    editingIndex = index
+                                    editRateString = if (item.rate > 0.0) item.rate.toString() else ""
+                                    showEditRateDialog = true
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit Rate",
+                                    tint = Color(0xFF6750A4),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -1524,6 +1557,63 @@ fun CompiledBillCard(
                 }
             }
         }
+    }
+
+    if (showEditRateDialog && editingIndex in pendingItems.indices) {
+        val editingItem = pendingItems[editingIndex]
+        AlertDialog(
+            onDismissRequest = { showEditRateDialog = false },
+            title = {
+                Text(
+                    text = "Edit Item Rate",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1D1B20)
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Change the CFT rate for item #${editingIndex + 1}.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF49454F)
+                    )
+                    OutlinedTextField(
+                        value = editRateString,
+                        onValueChange = { editRateString = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Rate per CFT ($)") },
+                        placeholder = { Text("e.g. 12.50") },
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF6750A4),
+                            focusedLabelColor = Color(0xFF6750A4)
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val rateVal = editRateString.toDoubleOrNull() ?: 0.0
+                        viewModel.updatePendingBillItemRate(editingIndex, rateVal)
+                        showEditRateDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4))
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditRateDialog = false }) {
+                    Text("Cancel", color = Color(0xFF6750A4))
+                }
+            }
+        )
     }
 }
 

@@ -367,19 +367,38 @@ Calculated fast via *Timber CFT Calculator App*
     }
 
     fun addTallyToPendingBill(currentTally: List<TallyItem>, rate: Double) {
-        val updatedItems = currentTally.map { item ->
+        val unaddedItems = currentTally.filter { it.rate == 0.0 }
+        if (unaddedItems.isEmpty()) return
+
+        val updatedItems = unaddedItems.map { item ->
             item.copy(rate = rate)
         }
+        
+        viewModelScope.launch {
+            updatedItems.forEach { item ->
+                repository.insert(item)
+            }
+        }
+
         pendingBillItems = pendingBillItems + updatedItems
         savePendingBillToPrefs()
         
-        // Clear active tally sheet
-        clearTally()
+        // Clear active rate input for next batch
+        ratePerCft = ""
     }
 
     fun clearPendingBill() {
         pendingBillItems = emptyList()
         savePendingBillToPrefs()
+    }
+
+    fun updatePendingBillItemRate(index: Int, newRate: Double) {
+        if (index in pendingBillItems.indices) {
+            val list = pendingBillItems.toMutableList()
+            list[index] = list[index].copy(rate = newRate)
+            pendingBillItems = list
+            savePendingBillToPrefs()
+        }
     }
 
     fun saveCompiledCustomerBill(
