@@ -46,7 +46,8 @@ class TallyRepository(private val tallyDao: TallyDao) {
                     girth = item.girth,
                     useHoppusRule = item.useHoppusRule,
                     units = item.units,
-                    calculatedCft = item.calculatedCft
+                    calculatedCft = item.calculatedCft,
+                    rate = item.rate
                 )
             )
         }

@@ -20,5 +20,6 @@ data class TallyItem(
     val units: Int = 1, // Number of identical pieces (for rectangular mode)
     
     // Calculated Result
-    val calculatedCft: Double
+    val calculatedCft: Double,
+    val rate: Double = 0.0
 )

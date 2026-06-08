@@ -353,8 +353,57 @@ Calculated fast via *Timber CFT Calculator App*
     var receiptTemplate by mutableStateOf("")
         private set
 
+    var pendingBillItems by mutableStateOf<List<TallyItem>>(emptyList())
+        private set
+
     init {
         receiptTemplate = prefs.getString("receipt_template", DEFAULT_RECEIPT_TEMPLATE) ?: DEFAULT_RECEIPT_TEMPLATE
+        val savedPending = prefs.getString("pending_bill_items", "") ?: ""
+        pendingBillItems = CustomerBill.deserializeItems(savedPending)
+    }
+
+    private fun savePendingBillToPrefs() {
+        prefs.edit().putString("pending_bill_items", CustomerBill.serializeItems(pendingBillItems)).apply()
+    }
+
+    fun addTallyToPendingBill(currentTally: List<TallyItem>, rate: Double) {
+        val updatedItems = currentTally.map { item ->
+            item.copy(rate = rate)
+        }
+        pendingBillItems = pendingBillItems + updatedItems
+        savePendingBillToPrefs()
+        
+        // Clear active tally sheet
+        clearTally()
+    }
+
+    fun clearPendingBill() {
+        pendingBillItems = emptyList()
+        savePendingBillToPrefs()
+    }
+
+    fun saveCompiledCustomerBill(
+        customerName: String,
+        subtotal: Double,
+        wastagePercent: Double,
+        totalCft: Double,
+        totalPrice: Double
+    ) {
+        val serialized = CustomerBill.serializeItems(pendingBillItems)
+        val bill = CustomerBill(
+            customerName = customerName.trim(),
+            subtotalCft = subtotal,
+            wastagePercent = wastagePercent,
+            totalCft = totalCft,
+            ratePerCft = 0.0, // Indication of multi-rate/mixed
+            totalPrice = totalPrice,
+            itemsJson = serialized
+        )
+        viewModelScope.launch {
+            repository.insertBill(bill)
+            clearPendingBill()
+            clearAllCurrentInputs()
+        }
     }
 
     fun saveReceiptTemplate(newTemplate: String) {
@@ -380,14 +429,15 @@ Calculated fast via *Timber CFT Calculator App*
         val itemsStr = StringBuilder().apply {
             itemsList.forEachIndexed { idx, item ->
                 val num = idx + 1
+                val rateSuffix = if (item.rate > 0.0) String.format(java.util.Locale.US, " @ $%.2f", item.rate) else ""
                 if (item.type == "RECTANGULAR") {
                     val pcsString = if (item.units > 1) " × ${item.units} pcs" else ""
-                    append("$num. Sawn: ${item.width}\" W × ${item.thickness}\" T × ${item.length}′ L$pcsString = ")
-                    append(String.format(java.util.Locale.US, "%.3f CFT\n", item.calculatedCft))
+                    append("$num. ${item.width}\" × ${item.thickness}\" × ${item.length}′$pcsString = ")
+                    append(String.format(java.util.Locale.US, "%.3f CFT%s\n", item.calculatedCft, rateSuffix))
                 } else {
                     val rule = if (item.useHoppusRule) "Hoppus" else "Cylinder"
                     append("$num. Log ($rule): G: ${item.girth}\" × L: ${item.length}′ = ")
-                    append(String.format(java.util.Locale.US, "%.3f CFT\n", item.calculatedCft))
+                    append(String.format(java.util.Locale.US, "%.3f CFT%s\n", item.calculatedCft, rateSuffix))
                 }
             }
         }.toString().trim()
@@ -405,7 +455,14 @@ Calculated fast via *Timber CFT Calculator App*
         val rateStr = if (rate > 0.0) {
             String.format(java.util.Locale.US, "$ %.2f / CFT", rate)
         } else {
-            "N/A"
+            val nonZeroRates = itemsList.map { it.rate }.filter { it > 0.0 }.distinct()
+            if (nonZeroRates.size == 1) {
+                String.format(java.util.Locale.US, "$ %.2f / CFT", nonZeroRates[0])
+            } else if (nonZeroRates.size > 1) {
+                "Mixed Rates"
+            } else {
+                "N/A"
+            }
         }
 
         val totalPriceStr = if (totalVal > 0.0) {

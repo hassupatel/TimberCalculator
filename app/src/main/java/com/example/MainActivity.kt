@@ -85,6 +85,8 @@ fun TimberCalculatorApp(
     var activeTab by remember { mutableStateOf("calculator") }
     var showSaveBillDialog by remember { mutableStateOf(false) }
     var inputCustomerName by remember { mutableStateOf("") }
+    var showSaveCompiledDialog by remember { mutableStateOf(false) }
+    var inputCompiledCustomerName by remember { mutableStateOf("") }
 
     // Base totals calculations derived from Room Flow state
     val baseTotalCft = tallyList.sumOf { it.calculatedCft }
@@ -157,6 +159,80 @@ fun TimberCalculatorApp(
             },
             dismissButton = {
                 TextButton(onClick = { showSaveBillDialog = false }) {
+                    Text("Cancel", color = Color(0xFF6750A4))
+                }
+            }
+        )
+    }
+
+    if (showSaveCompiledDialog) {
+        val pendingBillItems = viewModel.pendingBillItems
+        val compiledSubtotal = pendingBillItems.sumOf { it.calculatedCft }
+        val compiledWastageCft = compiledSubtotal * viewModel.wastagePercent
+        val compiledTotalCft = compiledSubtotal + compiledWastageCft
+        val compiledTotalPrice = pendingBillItems.sumOf { item ->
+            item.calculatedCft * (1.0 + viewModel.wastagePercent) * item.rate
+        }
+        AlertDialog(
+            onDismissRequest = { showSaveCompiledDialog = false },
+            title = {
+                Text(
+                    text = "Save Compiled Multi-Rate Bill",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1D1B20)
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Assign a customer name to index and save this compiled multi-rate bill.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF49454F)
+                    )
+                    OutlinedTextField(
+                        value = inputCompiledCustomerName,
+                        onValueChange = { inputCompiledCustomerName = it },
+                        label = { Text("Customer Name") },
+                        placeholder = { Text("e.g. John Doe") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("save_compiled_bill_customer_input"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF6750A4),
+                            focusedLabelColor = Color(0xFF6750A4)
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val name = inputCompiledCustomerName.trim()
+                        if (name.isNotEmpty()) {
+                            viewModel.saveCompiledCustomerBill(
+                                customerName = name,
+                                subtotal = compiledSubtotal,
+                                wastagePercent = viewModel.wastagePercent,
+                                totalCft = compiledTotalCft,
+                                totalPrice = compiledTotalPrice
+                            )
+                            Toast.makeText(context, "Compiled bill saved successfully under '$name'!", Toast.LENGTH_SHORT).show()
+                            showSaveCompiledDialog = false
+                            inputCompiledCustomerName = ""
+                        } else {
+                            Toast.makeText(context, "Please enter a valid name!", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4))
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSaveCompiledDialog = false }) {
                     Text("Cancel", color = Color(0xFF6750A4))
                 }
             }
@@ -267,6 +343,50 @@ fun TimberCalculatorApp(
                             },
                             onSaveBillClick = {
                                 showSaveBillDialog = true
+                            },
+                            onAddToCompiledBillClick = {
+                                viewModel.addTallyToPendingBill(tallyList, rate)
+                                Toast.makeText(context, "Added batch of wood to the compiled bill!", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                }
+
+                // Dynamic Multi-rate Compiled Bill Card
+                val pendingBillItems = viewModel.pendingBillItems
+                if (pendingBillItems.isNotEmpty()) {
+                    item {
+                        CompiledBillCard(
+                            viewModel = viewModel,
+                            pendingItems = pendingBillItems,
+                            onClearBill = {
+                                viewModel.clearPendingBill()
+                                Toast.makeText(context, "Cleared compiled bill!", Toast.LENGTH_SHORT).show()
+                            },
+                            onSaveBillClick = {
+                                showSaveCompiledDialog = true
+                            },
+                            onShareBillClick = {
+                                val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+                                val dateStr = sdf.format(Date())
+                                val compiledSubtotal = pendingBillItems.sumOf { it.calculatedCft }
+                                val compiledWastageCft = compiledSubtotal * viewModel.wastagePercent
+                                val compiledTotalCft = compiledSubtotal + compiledWastageCft
+                                val compiledTotalPrice = pendingBillItems.sumOf { item ->
+                                    item.calculatedCft * (1.0 + viewModel.wastagePercent) * item.rate
+                                }
+                                val formattedMessage = viewModel.formatReceiptText(
+                                    customerName = "",
+                                    dateString = dateStr,
+                                    itemsList = pendingBillItems,
+                                    subtotalCft = compiledSubtotal,
+                                    wastagePct = viewModel.wastagePercent,
+                                    wastageCft = compiledWastageCft,
+                                    totalCft = compiledTotalCft,
+                                    rate = 0.0,
+                                    totalVal = compiledTotalPrice
+                                )
+                                shareReceipt(context, formattedMessage)
                             }
                         )
                     }
@@ -847,7 +967,7 @@ fun RecentMeasurementsCard(
                         Column(modifier = Modifier.weight(1f)) {
                             val dimString = if (item.type == "RECTANGULAR") {
                                 val pcsString = if (item.units > 1) " × ${item.units} pcs" else ""
-                                "${item.width}\" w × ${item.thickness}\" t × ${item.length}′ l$pcsString (Sawn)"
+                                "${item.width}\" × ${item.thickness}\" × ${item.length}′$pcsString"
                             } else {
                                 "${item.girth}\" circ × ${item.length}′ (${if (item.useHoppusRule) "Hoppus" else "Cylinder"})"
                             }
@@ -916,7 +1036,8 @@ fun InvoiceSummaryCard(
     selectedWastage: Double,
     onWastageChange: (Double) -> Unit,
     onShareInvoice: () -> Unit,
-    onSaveBillClick: () -> Unit
+    onSaveBillClick: () -> Unit,
+    onAddToCompiledBillClick: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1120,6 +1241,35 @@ fun InvoiceSummaryCard(
                 }
             }
 
+            // Add to Compiled Bill Button
+            Button(
+                onClick = onAddToCompiledBillClick,
+                enabled = baseTotalCft > 0.0 && rateString.isNotEmpty() && (rateString.toDoubleOrNull() ?: 0.0) > 0.0,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("add_to_compiled_bill_button"),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF6750A4),
+                    contentColor = Color.White,
+                    disabledContainerColor = Color(0xFF6750A4).copy(alpha = 0.35f),
+                    disabledContentColor = Color.White.copy(alpha = 0.5f)
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    "ADD TO BILL",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1171,6 +1321,206 @@ fun InvoiceSummaryCard(
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CompiledBillCard(
+    viewModel: TimberViewModel,
+    pendingItems: List<TallyItem>,
+    onClearBill: () -> Unit,
+    onSaveBillClick: () -> Unit,
+    onShareBillClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("compiled_bill_card"),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFDF8F5)), // warm subtle wood tone
+        border = BorderStroke(1.5.dp, Color(0xFFEADDFF))
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically, 
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle, 
+                        contentDescription = null,
+                        tint = Color(0xFF6750A4),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "COMPILED BILL (MULTI-RATE)",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF6750A4),
+                        letterSpacing = 0.5.sp
+                    )
+                }
+                
+                Text(
+                    text = "CLEAR BILL",
+                    color = Color(0xFFB3261E),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier
+                        .clickable { onClearBill() }
+                        .padding(4.dp)
+                        .testTag("clear_compiled_bill_button")
+                )
+            }
+
+            // List of added items in compiled bill
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                pendingItems.forEachIndexed { index, item ->
+                    val pcsString = if (item.units > 1) " × ${item.units} pcs" else ""
+                    val dimString = if (item.type == "RECTANGULAR") {
+                        "${item.width}\" × ${item.thickness}\" × ${item.length}′$pcsString"
+                    } else {
+                        "${item.girth}\" circ × ${item.length}′ (${if (item.useHoppusRule) "Hoppus" else "Cylinder"})"
+                    }
+                    val itemWastagePct = viewModel.wastagePercent
+                    val itemBaseCft = item.calculatedCft
+                    val itemPrice = itemBaseCft * (1.0 + itemWastagePct) * item.rate
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.White, RoundedCornerShape(8.dp))
+                            .border(BorderStroke(0.5.dp, Color(0xFFE7E0EC)), RoundedCornerShape(8.dp))
+                            .padding(8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "${index + 1}. $dimString",
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF1D1B20)
+                            )
+                            Text(
+                                text = String.format(java.util.Locale.US, "%.3f CFT @ $ %.2f / CFT", itemBaseCft, item.rate),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF49454F)
+                            )
+                        }
+                        Text(
+                            text = String.format(java.util.Locale.US, "$ %.2f", itemPrice),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1D1B20)
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider(color = Color(0xFFE7E0EC), thickness = 1.dp)
+
+            // Compiled totals calculation
+            val compiledSubtotal = pendingItems.sumOf { it.calculatedCft }
+            val compiledWastageCft = compiledSubtotal * viewModel.wastagePercent
+            val compiledTotalCft = compiledSubtotal + compiledWastageCft
+            val compiledTotalPrice = pendingItems.sumOf { item ->
+                item.calculatedCft * (1.0 + viewModel.wastagePercent) * item.rate
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFFFFEDD5).copy(alpha = 0.5f))
+                    .border(BorderStroke(0.5.dp, Color(0xFFFED7AA)), RoundedCornerShape(12.dp))
+                    .padding(10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "COMPILED VOLUME",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF7C2D12)
+                    )
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(
+                            text = String.format(java.util.Locale.US, "%.3f", compiledTotalCft),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFF431407)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "CFT",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF431407)
+                        )
+                    }
+                }
+
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "ESTIMATED MULTI-RATE PRICE",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF7C2D12)
+                    )
+                    Text(
+                        text = String.format(java.util.Locale.US, "$ %.2f", compiledTotalPrice),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFF7C2D12)
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Share Multi-Rate Digital Receipt Button
+                Button(
+                    onClick = onShareBillClick,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("SHARE", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                }
+
+                // Save Multi-Rate Bill Button
+                Button(
+                    onClick = onSaveBillClick,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF006874)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Check, contentDescription = null, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("SAVE BILL", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -1842,10 +2192,10 @@ fun CustomerBillsScreen(
                                                                     val nameIndex = itemIdx + 1
                                                                     val itemLabel = if (item.type == "RECTANGULAR") {
                                                                         val pcs = if (item.units > 1) " × ${item.units} pcs" else ""
-                                                                        "$nameIndex. Sawn: ${item.width}\" w × ${item.thickness}\" t × ${item.length}′ l$pcs"
+                                                                        "$nameIndex. ${item.width}\" × ${item.thickness}\" × ${item.length}′$pcs${if (item.rate > 0.0) String.format(Locale.US, " (@ $%.2f)", item.rate) else ""}"
                                                                     } else {
                                                                         val rule = if (item.useHoppusRule) "Hoppus" else "Cylinder"
-                                                                        "$nameIndex. Log ($rule): G: ${item.girth}\" × L: ${item.length}′"
+                                                                        "$nameIndex. Log ($rule): G: ${item.girth}\" × L: ${item.length}′${if (item.rate > 0.0) String.format(Locale.US, " (@ $%.2f)", item.rate) else ""}"
                                                                     }
                                                                     Text(
                                                                         text = itemLabel,
@@ -1885,6 +2235,16 @@ fun CustomerBillsScreen(
                                                                         style = MaterialTheme.typography.labelSmall,
                                                                         color = Color(0xFF49454F)
                                                                     )
+                                                                } else {
+                                                                    val hasAnyRates = billItems.any { it.rate > 0.0 }
+                                                                    if (hasAnyRates) {
+                                                                        Text(
+                                                                            text = "Multi-Rate Bill",
+                                                                            style = MaterialTheme.typography.labelSmall,
+                                                                            color = Color(0xFF6750A4),
+                                                                            fontWeight = FontWeight.Bold
+                                                                        )
+                                                                    }
                                                                 }
                                                             }
 

@@ -28,7 +28,8 @@ data class CustomerBill(
                     (item.girth ?: "").toString(),
                     item.useHoppusRule.toString(),
                     item.units.toString(),
-                    item.calculatedCft.toString()
+                    item.calculatedCft.toString(),
+                    item.rate.toString()
                 ).joinToString(separator = "|")
             }
         }
@@ -47,7 +48,8 @@ data class CustomerBill(
                         girth = parts[5].toDoubleOrNull(),
                         useHoppusRule = parts[6].toBooleanStrictOrNull() ?: true,
                         units = parts[7].toIntOrNull() ?: 1,
-                        calculatedCft = parts[8].toDoubleOrNull() ?: 0.0
+                        calculatedCft = parts[8].toDoubleOrNull() ?: 0.0,
+                        rate = if (parts.size > 9) parts[9].toDoubleOrNull() ?: 0.0 else 0.0
                     )
                 }
             } catch (e: Exception) {
